@@ -7,7 +7,7 @@
   "scripts": {
     "serve": "parcel configuration-app/index.html --no-cache",
     "build:config": "parcel build configuration-app/index.html --dist-dir dist/config",
-    "build:integration": "ncc build integration/index.ts -m -o dist/integration",
+    "build:integration": "ncc build integration/index.ts -o dist/integration",
     "build": "yarn build:config; yarn build:integration"
   },
   "devDependencies": {
@@ -18,7 +18,9 @@
   },
   "dependencies": {
     "@chec/integration-configuration-sdk": "^0.0.8",
-    "@rutter/rutter-link": "^1.0.31"
+    "@rutter/rutter-link": "^1.0.31",
+    "@types/postmate": "^1.5.2",
+    "axios": "^0.24.0"
   },
   "browserslist": {
     "production": [

@@ -1,0 +1,63 @@
+@import "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap";
+#app {
+  font-family: 'Lato', sans-serif;
+  line-height: 1.5;
+
+  background-color: white;
+  max-width: 32rem;
+  margin: 1rem auto 3rem;
+
+  -webkit-box-shadow: 0 0 1px rgb(40 51 65 / 10%), 0 1px 2px rgb(40 51 65 / 10%), 0 1px 3px rgb(40 51 65 / 10%);
+  box-shadow: 0 0 1px rgb(40 51 65 / 10%), 0 1px 2px rgb(40 51 65 / 10%), 0 1px 3px rgb(40 51 65 / 10%);
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+p {
+  margin-top: 0;
+}
+
+h3 {
+  margin-top: 0.25rem;
+}
+
+button {
+  width: 100%;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  border-radius: 4px;
+  font-size: .938rem;
+  line-height: 1.25;
+
+  color: #fff;
+  color: rgba(255, 255, 255, 1);
+  background-color: rgba(40, 51, 65, 1);
+
+  font-weight: 700;
+  -webkit-box-shadow: 0 0 1px rgb(40 51 65 / 10%), 0 1px 2px rgb(40 51 65 / 10%), 0 1px 3px rgb(40 51 65 / 10%);
+  box-shadow: 0 0 1px rgb(40 51 65 / 10%), 0 1px 2px rgb(40 51 65 / 10%), 0 1px 3px rgb(40 51 65 / 10%);
+  border-width: 1px;
+  display: -webkit-box;
+  display: -ms-flexbox;
+  display: flex;
+  -webkit-box-pack: center;
+  -ms-flex-pack: center;
+  justify-content: center;
+  -webkit-box-align: center;
+  -ms-flex-align: center;
+  align-items: center;
+  text-align: center;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: rgba(65, 84, 108, 1);
+}
+
+button:active {
+  background-color: rgba(113, 135, 165, 1);
+}
+
+/*# sourceMappingURL=index.f2f6e04f.css.map */
