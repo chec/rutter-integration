@@ -5,7 +5,7 @@
   "author": "Chec Platform Ltd.",
   "license": "BSD-3-Clause",
   "scripts": {
-    "serve": "parcel configuration-app/index.html --no-cache",
+    "serve": "parcel configuration-app/index.html --no-cache --dist-dir dist/config",
     "build:config": "parcel build configuration-app/index.html --dist-dir dist/config",
     "build:integration": "ncc build integration/index.ts -o dist/integration",
     "build": "yarn build:config; yarn build:integration"
