@@ -81,7 +81,7 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
 
     products.map((product) => {
       promises.push(
-        saveProduct(product, context)
+        saveProduct(product, context, platform)
       );
       // Add item to synced list
       syncedItems.products.push(product);
@@ -132,7 +132,7 @@ async function getConfig(context: Context): Promise<OptionsOfJSONResponseBody> {
   };
 }
 
-function convertProduct(product: RutterProduct) {
+function convertProduct(product: RutterProduct, platform: string) {
   const baseProduct = {
     // Single product
     product: {
@@ -152,6 +152,10 @@ function convertProduct(product: RutterProduct) {
         sku: product.variants[0]?.sku || null,
         price: product.variants[0]?.price || 0,
         quantity: product.variants[0]?.inventory?.total_count || null,
+        meta: {
+          [`${platform}_id`]: product.platform_id,
+          integration_id: product.id,
+        }
       },
       collect: {
         shipping: product.variants[0]?.requires_shipping,
@@ -199,8 +203,8 @@ function convertProduct(product: RutterProduct) {
   };
 }
 
-async function saveProduct(product: RutterProduct, context) {
-  const productPayload = convertProduct(product);
+async function saveProduct(product: RutterProduct, context: Context, platform: string) {
+  const productPayload = convertProduct(product, platform);
 
   // Upload any images
   if (product.images?.length > 0){
@@ -208,12 +212,13 @@ async function saveProduct(product: RutterProduct, context) {
       await context.api.post('v1/assets', {
         filename: image.src.substring(image.src.lastIndexOf('/') + 1),
         url: image.src,
+        // @ts-ignore
       })).id)
     )).map(id => ({ id }));
   }
 
   // Save the product with the given payload
-  const productResponse = await context.api.post('v1/products', productPayload);
+  const productResponse: any = await context.api.post('v1/products', productPayload);
 
   // We can stop if there are no variants (or one, which is converted into the product)
   if (product.variants.length <= 1) {
