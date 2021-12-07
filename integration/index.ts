@@ -37,6 +37,7 @@ interface RutterCategory {
 
 interface RutterProductResponse {
   products: Array<RutterProduct>
+  next_cursor: string|null
 }
 
 // List of platforms that are supported by Rutter's categories API. Notable exceptions:
@@ -45,7 +46,10 @@ const categoriesSupport = [];
 
 const handler: IntegrationHandler<ConfigurationType> = async (request, context) => {
   if (request.body.event !== 'integrations.ready') {
-    return;
+    return {
+      statusCode: 422,
+      body: 'This integration only supports the "integrations.ready" event',
+    };
   }
 
   const integration = await context.integration();
@@ -59,21 +63,31 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
   };
 
   const gotConfig = await getConfig(context);
-  const storeData: any = await context.got('store', gotConfig).json();
 
-  // Initial save products
-  // Try making a call to the API to receive the products data
-  const productData = (await context.got<RutterProductResponse>('products', gotConfig)).body;
+  // Sync products using a do..while for handling cursor pagination
+  let products = [];
+  let cursor: string|null = null;
+  do {
+    const cursorParam = cursor ? `?cursor=${cursor}` : '';
 
-  if (productData.products) {
-    productData.products.map((product) => {
+    // Super ugly object destructuring assignment here. The RHS of this statement is a RutterProductResponse
+    ({ products, next_cursor: cursor } = (
+      await context.got<RutterProductResponse>(`products${cursorParam}`, gotConfig)
+    ).body);
+
+    if (!products) {
+      break;
+    }
+
+    products.map((product) => {
       promises.push(
         saveProduct(product, context)
       );
       // Add item to synced list
       syncedItems.products.push(product);
     });
-  }
+  } while (cursor && products && products.length !== 0);
+
 
   // Initial save categories
   if (categoriesSupport.includes(platform)) {
