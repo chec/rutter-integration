@@ -15,68 +15,51 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-;
-;
+// List of platforms that are supported by Rutter's categories API. Notable exceptions:
+// - Shopify. They have collections, but not categories.
+const categoriesSupport = [];
 const handler = (request, context) => __awaiter(void 0, void 0, void 0, function* () {
-    // Integrations are run by events, usually from a webhook. The event that triggered this action is available within
-    // the body of the request
-    switch (request.body.event) {
-        case 'integrations.ready':
-            try {
-                // Perform work on the first run of an integration - eg. setting up with an external service for the first time
-                const baseUrl = 'https://production.rutterapi.com';
-                const config = yield getConfig(baseUrl, context);
-                let promises = [];
-                let syncedItems = {
-                    products: [],
-                    categories: [],
-                };
-                const storeData = yield context.got('store', config).json();
-                //  Initial save products
-                // Try making a call to the API to recieve the products data
-                const productData = yield context.got('products', config).json();
-                if ('products' in productData) {
-                    productData.products.map((product) => {
-                        promises.push(saveProduct(product, context));
-                        // Add item to synced list
-                        syncedItems.products.push(product);
-                    });
-                }
-                // RUTTER SHOPIFY DOES NOT SUPPORT CATEGORIES
-                //  Initial save categories
-                // Try making a call to the API to recieve the categories data
-                // const categoryData: any = await context.got<RutterCategory>(
-                //   'products/categories', config).json();
-                // if ('categories' in categoryData) {
-                //   categoryData.categories.map((category) => {
-                //     promises.push(
-                //       saveCategory(category, context)
-                //     );
-                //     // Add item to synced list
-                //     syncedItems.categories.push(category);
-                //   });
-                // }
-                yield Promise.all(promises);
-                return {
-                    statusCode: 201,
-                    body: JSON.stringify(Object.assign({ message: 'Shopify sync completed!', store: storeData }, syncedItems)),
-                };
-            }
-            catch (error) {
-                console.log(error.response.body);
-                // if the error has an attribute error 500 taht you cannot have required attributes so it failed to run
-            }
-        case 'orders.create':
-        // Perform work based on the "order.create" webhook invocation. Integrations are configured to only handle
-        // specific webhook events, so ensure that the integration template is configured with the right webhook events.
+    if (request.body.event !== 'integrations.ready') {
+        return;
     }
+    const integration = yield context.integration();
+    // @ts-ignore
+    const platform = integration.template.code;
+    const promises = [];
+    const syncedItems = {
+        products: [],
+        categories: [],
+    };
+    const gotConfig = yield getConfig(context);
+    const storeData = yield context.got('store', gotConfig).json();
+    // Initial save products
+    // Try making a call to the API to receive the products data
+    const productData = (yield context.got('products', gotConfig)).body;
+    if (productData.products) {
+        productData.products.map((product) => {
+            promises.push(saveProduct(product, context));
+            // Add item to synced list
+            syncedItems.products.push(product);
+        });
+    }
+    // Initial save categories
+    if (categoriesSupport.includes(platform)) {
+        // Try making a call to the API to receive the categories data
+        // TODO Add category support
+    }
+    const checProducts = yield Promise.all(promises);
     return {
-        statusCode: 200,
-        body: '',
+        statusCode: 201,
+        body: JSON.stringify({
+            message: 'Shopify sync completed!',
+            product_count: promises.length,
+            product_ids: checProducts.map(({ id }) => id),
+        }),
     };
 });
-function getConfig(baseUrl, context) {
+function getConfig(context) {
     return __awaiter(this, void 0, void 0, function* () {
+        const baseUrl = 'https://production.rutterapi.com';
         const integration = yield context.integration();
         // Retrieve the access token from Rutter
         const res = yield context.got(`${baseUrl}/item/public_token/exchange`, {
@@ -88,6 +71,7 @@ function getConfig(baseUrl, context) {
             method: 'post',
         }).json();
         return {
+            responseType: 'json',
             searchParams: {
                 access_token: res.access_token,
             },
@@ -97,90 +81,99 @@ function getConfig(baseUrl, context) {
         };
     });
 }
-function sanitizeProduct(product) {
-    var _a, _b, _c, _d, _e, _f, _g;
-    if (product.variants.length > 1) {
-        // Has variants
-        const variant_groups_names = product.variants[0].option_values.map((option) => option.name);
-        ;
-        return {
-            product: {
-                name: product.name,
-                description: (product === null || product === void 0 ? void 0 : product.description) || null,
-                sku: null,
-                price: ((_a = product.variants[0]) === null || _a === void 0 ? void 0 : _a.price) || 0,
-                active: product.status === 'active',
-                quantity: null,
-            },
-            collect: {
-                shipping: product.variants.some((variant) => variant.requires_shipping === true),
-            },
-            delivery: {
-                enabled: {
-                    shipping_native_v1: product.variants.some((variant) => variant.requires_shipping === true),
-                }
-            },
-            updated: product.updated_at,
-            assets: [],
-            variant_groups: variant_groups_names.map((group) => ({
-                name: group,
-                options: product.variants.map((variant) => variant.option_values.filter((option) => option.name === group)
-                    .map((option) => ({
-                    description: option.value,
-                    price: variant.price,
-                    quantity: variant.inventory.total_count
-                }))
-                    .reduce((pre, cur) => pre.concat(cur)))
-            })),
-        };
-    }
-    return {
+function convertProduct(product) {
+    var _a, _b, _c, _d, _e, _f;
+    const baseProduct = {
         // Single product
         product: {
             name: product.name,
             description: (product === null || product === void 0 ? void 0 : product.description) || null,
-            sku: ((_b = product.variants[0]) === null || _b === void 0 ? void 0 : _b.sku) || null,
-            price: ((_c = product.variants[0]) === null || _c === void 0 ? void 0 : _c.price) || 0,
+            price: 0,
             active: product.status === 'active',
-            quantity: ((_e = (_d = product.variants[0]) === null || _d === void 0 ? void 0 : _d.inventory) === null || _e === void 0 ? void 0 : _e.total_count) || null,
         },
-        collect: {
-            shipping: (_f = product.variants[0]) === null || _f === void 0 ? void 0 : _f.requires_shipping,
-        },
-        delivery: {
-            enabled: {
-                shipping_native_v1: (_g = product === null || product === void 0 ? void 0 : product.variants[0]) === null || _g === void 0 ? void 0 : _g.requires_shipping,
-            }
-        },
-        updated: product.updated_at,
         assets: [],
     };
+    if (product.variants.length === 1) {
+        return Object.assign(Object.assign({}, baseProduct), { product: Object.assign(Object.assign({}, baseProduct.product), { sku: ((_a = product.variants[0]) === null || _a === void 0 ? void 0 : _a.sku) || null, price: ((_b = product.variants[0]) === null || _b === void 0 ? void 0 : _b.price) || 0, quantity: ((_d = (_c = product.variants[0]) === null || _c === void 0 ? void 0 : _c.inventory) === null || _d === void 0 ? void 0 : _d.total_count) || null }), collect: {
+                shipping: (_e = product.variants[0]) === null || _e === void 0 ? void 0 : _e.requires_shipping,
+            }, delivery: {
+                enabled: {
+                    shipping_native_v1: (_f = product === null || product === void 0 ? void 0 : product.variants[0]) === null || _f === void 0 ? void 0 : _f.requires_shipping,
+                }
+            } });
+    }
+    // Has variants. We need go through each variant and build up the groups and options that should be created on the
+    // product
+    // TODO use Commerce.js types here when they're available
+    const variantGroups = product.variants.reduce((acc, variant) => {
+        variant.option_values.forEach(({ name, value }) => {
+            // First, find or create a variant group matching the given name
+            let existingGroupIndex = acc.findIndex((candidate) => candidate.name === name);
+            if (existingGroupIndex === -1) {
+                existingGroupIndex = acc.length;
+                acc.push({ name, options: [] });
+            }
+            // Then create the option in the group if it doesn't exist
+            if (!acc[existingGroupIndex].options.find((candidate) => candidate.description === value)) {
+                acc[existingGroupIndex].options.push({ description: value });
+            }
+        });
+        return acc;
+    }, []);
+    return Object.assign(Object.assign({}, baseProduct), { collect: {
+            shipping: product.variants.some((variant) => variant.requires_shipping === true),
+        }, delivery: {
+            enabled: {
+                shipping_native_v1: product.variants.some((variant) => variant.requires_shipping === true),
+            }
+        }, variant_groups: variantGroups });
 }
 function saveProduct(product, context) {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
-        const payload = sanitizeProduct(product);
-        // console.log(JSON.stringify(payload));
-        // return;
+        const productPayload = convertProduct(product);
+        // Upload any images
         if (((_a = product.images) === null || _a === void 0 ? void 0 : _a.length) > 0) {
-            yield Promise.all(product.images.map((image) => __awaiter(this, void 0, void 0, function* () {
-                const data = yield context.api.post('v1/assets', {
+            productPayload.assets = (yield Promise.all(product.images.map((image) => __awaiter(this, void 0, void 0, function* () {
+                return (yield context.api.post('v1/assets', {
                     filename: image.src.substring(image.src.lastIndexOf('/') + 1),
                     url: image.src,
-                });
-                payload.assets.push({
-                    id: data.id
-                });
-            })));
+                })).id;
+            })))).map(id => ({ id }));
         }
-        return context.api.post('v1/products', payload);
+        // Save the product with the given payload
+        const productResponse = yield context.api.post('v1/products', productPayload);
+        // We can stop if there are no variants (or one, which is converted into the product)
+        if (product.variants.length <= 1) {
+            return productResponse;
+        }
+        // Now we need to figure out what specific variants to save
+        const variantPromises = product.variants.map((variant) => {
+            var _a;
+            // Figure out the specific options that need to be specified
+            const options = variant.option_values.map(({ name, value }) => {
+                const group = productResponse.variant_groups.find(({ name: candidateName }) => candidateName === name);
+                return group.options.find(({ name: candidateName }) => candidateName === value).id;
+            });
+            // Deal with weird inventory data
+            let inventory = (_a = variant.inventory) === null || _a === void 0 ? void 0 : _a.total_count;
+            if (typeof inventory !== 'number') {
+                inventory = undefined;
+            }
+            else if (inventory < 0) {
+                inventory = 0;
+            }
+            return context.api.post(`v1/products/${productResponse.id}/variants`, {
+                sku: variant.sku,
+                price: variant.price,
+                inventory,
+                options,
+            });
+        });
+        // Let all those variants save
+        yield Promise.all(variantPromises);
+        return productResponse;
     });
-}
-function saveCategory(category, context) {
-    const payload = {
-        name: category.name,
-    };
-    return context.api.post('v1/categories', payload);
 }
 module.exports = handler;
 

@@ -1,98 +1,104 @@
-import { IntegrationHandler } from '@chec/integration-handler';
+import { Context, IntegrationHandler } from '@chec/integration-handler';
 import { ConfigurationType } from '../configuration-type';
+import { OptionsOfJSONResponseBody } from 'got';
 
 interface RutterProduct {
-  name: 'String',
-};
+  id: string
+  platform_id: string
+  type: string
+  name: string
+  description: string
+  images: Array<RutterImage>
+  status: 'active' | 'archived' | 'inactive' | 'draft'
+  variants: Array<RutterVariant>
+  tags: Array<string>
+  product_url: string
+}
+
+interface RutterVariant {
+  id: string
+  product_id: string
+  barcode: string|null
+  title: string
+  price: number
+  sku: string
+  option_values: Array<{ name: string, value: string }>
+  requires_shipping: boolean
+  inventory?: { total_count: number, locations: null|Array<any> }
+}
+
+interface RutterImage {
+  src: string
+}
 
 interface RutterCategory {
-  name: 'String',
-};
+  name: string,
+}
+
+interface RutterProductResponse {
+  products: Array<RutterProduct>
+}
+
+// List of platforms that are supported by Rutter's categories API. Notable exceptions:
+// - Shopify. They have collections, but not categories.
+const categoriesSupport = [];
 
 const handler: IntegrationHandler<ConfigurationType> = async (request, context) => {
-  // Integrations are run by events, usually from a webhook. The event that triggered this action is available within
-  // the body of the request
-  switch (request.body.event) {
-    case 'integrations.ready':
-      try {
-        // Perform work on the first run of an integration - eg. setting up with an external service for the first time
-        const baseUrl = 'https://production.rutterapi.com';
-        const config = await getConfig(baseUrl, context);
-
-        let promises = [];
-        let syncedItems = {
-          products: [],
-          categories: [],
-        };
-
-        const storeData: any = await context.got(
-          'store', config).json();
-
-        //  Initial save products
-        // Try making a call to the API to recieve the products data
-        const productData: any = await context.got<RutterProduct>(
-          'products', config).json();
-
-        if ('products' in productData) {
-          productData.products.map((product) => {
-            promises.push(
-              saveProduct(product, context)
-            );
-            // Add item to synced list
-            syncedItems.products.push(product);
-          });
-        }
-
-        // RUTTER SHOPIFY DOES NOT SUPPORT CATEGORIES
-
-        //  Initial save categories
-
-        // Try making a call to the API to recieve the categories data
-        // const categoryData: any = await context.got<RutterCategory>(
-        //   'products/categories', config).json();
-
-        // if ('categories' in categoryData) {
-        //   categoryData.categories.map((category) => {
-        //     promises.push(
-        //       saveCategory(category, context)
-        //     );
-        //     // Add item to synced list
-        //     syncedItems.categories.push(category);
-        //   });
-        // }
-
-        await Promise.all(promises);
-
-        return {
-          statusCode: 201,
-          body: JSON.stringify({
-            message: 'Shopify sync completed!',
-            store: storeData,
-            ...syncedItems,
-          }),
-        };
-      } catch (error) {
-        console.log(error.response.body);
-        // if the error has an attribute error 500 taht you cannot have required attributes so it failed to run
-      }
-
-    case 'orders.create':
-      // Perform work based on the "order.create" webhook invocation. Integrations are configured to only handle
-      // specific webhook events, so ensure that the integration template is configured with the right webhook events.
+  if (request.body.event !== 'integrations.ready') {
+    return;
   }
 
+  const integration = await context.integration();
+  // @ts-ignore
+  const platform = integration.template.code;
+
+  const promises = [];
+  const syncedItems = {
+    products: [],
+    categories: [],
+  };
+
+  const gotConfig = await getConfig(context);
+  const storeData: any = await context.got('store', gotConfig).json();
+
+  // Initial save products
+  // Try making a call to the API to receive the products data
+  const productData = (await context.got<RutterProductResponse>('products', gotConfig)).body;
+
+  if (productData.products) {
+    productData.products.map((product) => {
+      promises.push(
+        saveProduct(product, context)
+      );
+      // Add item to synced list
+      syncedItems.products.push(product);
+    });
+  }
+
+  // Initial save categories
+  if (categoriesSupport.includes(platform)) {
+    // Try making a call to the API to receive the categories data
+    // TODO Add category support
+  }
+
+  const checProducts = await Promise.all(promises);
+
   return {
-    statusCode: 200,
-    body: '',
+    statusCode: 201,
+    body: JSON.stringify({
+      message: 'Shopify sync completed!',
+      product_count: promises.length,
+      product_ids: checProducts.map(({ id }) => id),
+    }),
   };
 };
 
 
-async function getConfig(baseUrl, context) {
+async function getConfig(context: Context): Promise<OptionsOfJSONResponseBody> {
+  const baseUrl = 'https://production.rutterapi.com';
   const integration = await context.integration();
   // Retrieve the access token from Rutter
-  const res: any = await context.got(`${baseUrl}/item/public_token/exchange`,
-  {
+  const res: any = await context.got(`${baseUrl}/item/public_token/exchange`, {
     json: {
       client_id: process.env.RUTTER_CLIENT_ID,
       secret: process.env.RUTTER_SECRET_ID,
@@ -102,6 +108,7 @@ async function getConfig(baseUrl, context) {
   }).json();
 
   return {
+    responseType: 'json',
     searchParams: {
       access_token: res.access_token,
     },
@@ -111,95 +118,122 @@ async function getConfig(baseUrl, context) {
   };
 }
 
-function sanitizeProduct(product) {
-  if (product.variants.length > 1) {
-    // Has variants
-    const variant_groups_names = product.variants[0].option_values.map((option) => option.name);;
-
-    return {
-      product: {
-        name: product.name,
-        description: product?.description || null,
-        sku: null,
-        price: product.variants[0]?.price  || 0,
-        active: product.status === 'active',
-        quantity: null,
-      },
-      collect: {
-        shipping: product.variants.some((variant) => variant.requires_shipping === true),
-      },
-      delivery: {
-        enabled: {
-          shipping_native_v1: product.variants.some((variant) => variant.requires_shipping === true),
-        }
-      },
-      updated: product.updated_at,
-      assets: [],
-      variant_groups: variant_groups_names.map((group) => ({
-        name: group,
-        options: product.variants.map((variant) =>
-          variant.option_values.filter((option) => option.name === group)
-          .map((option) => ({
-            description: option.value,
-            price: variant.price,
-            quantity: variant.inventory.total_count
-          }))
-          .reduce((pre, cur) => pre.concat(cur))
-        )
-      })),
-    }
-  }
-  return {
+function convertProduct(product: RutterProduct) {
+  const baseProduct = {
     // Single product
     product: {
       name: product.name,
       description: product?.description || null,
-      sku: product.variants[0]?.sku || null,
-      price: product.variants[0]?.price  || 0,
+      price: 0,
       active: product.status === 'active',
-      quantity: product.variants[0]?.inventory?.total_count || null,
     },
+    assets: [],
+  }
+
+  if (product.variants.length === 1) {
+    return {
+      ...baseProduct,
+      product: {
+        ...baseProduct.product,
+        sku: product.variants[0]?.sku || null,
+        price: product.variants[0]?.price || 0,
+        quantity: product.variants[0]?.inventory?.total_count || null,
+      },
+      collect: {
+        shipping: product.variants[0]?.requires_shipping,
+      },
+      delivery: {
+        enabled: {
+          shipping_native_v1: product?.variants[0]?.requires_shipping,
+        }
+      },
+    };
+  }
+
+  // Has variants. We need go through each variant and build up the groups and options that should be created on the
+  // product
+  // TODO use Commerce.js types here when they're available
+  const variantGroups = product.variants.reduce<Array<any>>((acc, variant) => {
+    variant.option_values.forEach(({ name, value }) => {
+      // First, find or create a variant group matching the given name
+      let existingGroupIndex = acc.findIndex((candidate) => candidate.name === name);
+      if (existingGroupIndex === -1) {
+        existingGroupIndex = acc.length;
+        acc.push({ name, options: [] });
+      }
+
+      // Then create the option in the group if it doesn't exist
+      if (!acc[existingGroupIndex].options.find((candidate) => candidate.description === value)) {
+        acc[existingGroupIndex].options.push({ description: value });
+      }
+    });
+
+    return acc;
+  }, []);
+
+  return {
+    ...baseProduct,
     collect: {
-      shipping: product.variants[0]?.requires_shipping,
+      shipping: product.variants.some((variant) => variant.requires_shipping === true),
     },
     delivery: {
       enabled: {
-        shipping_native_v1: product?.variants[0]?.requires_shipping,
+        shipping_native_v1: product.variants.some((variant) => variant.requires_shipping === true),
       }
     },
-    updated: product.updated_at,
-    assets: [],
+    variant_groups: variantGroups
   };
 }
 
-async function saveProduct(product, context) {
-  const payload = sanitizeProduct(product);
+async function saveProduct(product: RutterProduct, context) {
+  const productPayload = convertProduct(product);
 
-  // console.log(JSON.stringify(payload));
-  // return;
-
+  // Upload any images
   if (product.images?.length > 0){
-    await Promise.all(product.images.map(async (image) => {
-      const data = await context.api.post('v1/assets', {
+    productPayload.assets = (await Promise.all(product.images.map(async (image) => (
+      await context.api.post('v1/assets', {
         filename: image.src.substring(image.src.lastIndexOf('/') + 1),
         url: image.src,
-      });
-
-      payload.assets.push({
-        id: data.id
-      });
-    }));
+      })).id)
+    )).map(id => ({ id }));
   }
 
-  return context.api.post('v1/products', payload);
-}
+  // Save the product with the given payload
+  const productResponse = await context.api.post('v1/products', productPayload);
 
-function saveCategory(category, context) {
-  const payload = {
-    name: category.name,
-  };
+  // We can stop if there are no variants (or one, which is converted into the product)
+  if (product.variants.length <= 1) {
+    return productResponse;
+  }
 
-  return context.api.post('v1/categories', payload);
+  // Now we need to figure out what specific variants to save
+  const variantPromises = product.variants.map((variant) => {
+    // Figure out the specific options that need to be specified
+    const options = variant.option_values.map(({ name, value }) => {
+      const group = productResponse.variant_groups.find(({ name: candidateName }) => candidateName === name);
+      return group.options.find(({ name: candidateName }) => candidateName === value).id;
+    });
+
+    // Deal with weird inventory data
+    let inventory = variant.inventory?.total_count;
+    if (typeof inventory !== 'number') {
+      inventory = undefined;
+    } else if (inventory < 0) {
+      inventory = 0;
+    }
+
+    return context.api.post(`v1/products/${productResponse.id}/variants`, {
+      sku: variant.sku,
+      price: variant.price,
+      inventory,
+      options,
+    })
+  })
+
+  // Let all those variants save
+  await Promise.all(variantPromises);
+
+  return productResponse;
 }
 
 export = handler;
