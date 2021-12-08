@@ -3,23 +3,14 @@ import '@rutter/rutter-link';
 import { ConfigurationType } from '../configuration-type';
 
 import './index.css';
-
-// Declare a list of platforms as they relate to template "codes", as we will have multiple integration templates, one
-// for each platform Rutter supports
-const codesToPlatforms = {
-  shopify: {
-    platform: 'SHOPIFY',
-    label: 'Shopify',
-  },
-  // TODO add more
-};
+import platformMap from '../platformMap';
 
 (async () => {
   // Create an SDK and indicate that the configuration is initially unsavable
   const sdk = await createSDK<ConfigurationType>(false);
 
   // Figure out what "platform" we're supporting with this integration
-  const { platform, label } = codesToPlatforms[sdk.template];
+  const { platform, label } = platformMap[sdk.template];
 
   if (sdk.editMode) {
     // Ensure that we're not preventing save when editing

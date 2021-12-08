@@ -1,6 +1,7 @@
 import { Context, IntegrationHandler } from '@chec/integration-handler';
 import { ConfigurationType } from '../configuration-type';
 import { OptionsOfJSONResponseBody } from 'got';
+import platformMap from '../platformMap';
 
 interface RutterProduct {
   id: string
@@ -31,18 +32,10 @@ interface RutterImage {
   src: string
 }
 
-interface RutterCategory {
-  name: string,
-}
-
 interface RutterProductResponse {
   products: Array<RutterProduct>
   next_cursor: string|null
 }
-
-// List of platforms that are supported by Rutter's categories API. Notable exceptions:
-// - Shopify. They have collections, but not categories.
-const categoriesSupport = [];
 
 const handler: IntegrationHandler<ConfigurationType> = async (request, context) => {
   if (request.body.event !== 'integrations.ready') {
@@ -64,9 +57,13 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
 
   const gotConfig = await getConfig(context);
 
+  // TODO Add category support - Rutter only supports this for Etsy
+
   // Sync products using a do..while for handling cursor pagination
   let products = [];
   let cursor: string|null = null;
+  const idMap = (await context.store.get('idMap')) || {};
+
   do {
     const cursorParam = cursor ? `?cursor=${cursor}` : '';
 
@@ -79,28 +76,41 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
       break;
     }
 
-    products.map((product) => {
-      promises.push(
-        saveProduct(product, context)
-      );
-      // Add item to synced list
-      syncedItems.products.push(product);
-    });
+    products
+      // Filter out products that have already been synced previously
+      .filter((product) => !Object.values(idMap).find(({ integration_id: id }) => id === product.id))
+      // Save all products from Rutter to Chec
+      .map((product) => {
+        promises.push(
+          saveProduct(product, context).then((checProduct) => {
+            idMap[checProduct.id] = {
+              [`${platform}_id`]: product.platform_id,
+              integration_id: product.id,
+            };
+
+            return checProduct;
+          }),
+        );
+        // Add item to synced list
+        syncedItems.products.push(product);
+      });
   } while (cursor && products && products.length !== 0);
 
-
-  // Initial save categories
-  if (categoriesSupport.includes(platform)) {
-    // Try making a call to the API to receive the categories data
-    // TODO Add category support
-  }
-
   const checProducts = await Promise.all(promises);
+
+  context.store.set('idMap', idMap);
+
+  if (promises.length === 0) {
+    return {
+      statusCode: 200,
+      body: 'All products have already been synced',
+    };
+  }
 
   return {
     statusCode: 201,
     body: JSON.stringify({
-      message: 'Shopify sync completed!',
+      message: `${platformMap[platform].label} sync completed!`,
       product_count: promises.length,
       product_ids: checProducts.map(({ id }) => id),
     }),
@@ -199,7 +209,7 @@ function convertProduct(product: RutterProduct) {
   };
 }
 
-async function saveProduct(product: RutterProduct, context) {
+async function saveProduct(product: RutterProduct, context: Context) {
   const productPayload = convertProduct(product);
 
   // Upload any images

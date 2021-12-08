@@ -243,10 +243,10 @@
     postmate "^1.5.2"
     typescript "^4.4.4"
 
-"@chec/integration-handler@^0.0.11":
-  version "0.0.11"
-  resolved "https://registry.yarnpkg.com/@chec/integration-handler/-/integration-handler-0.0.11.tgz#2f35c50efb33c01f041341b544aaaf7d24c8cf7f"
-  integrity sha512-fnuGlswLrXJnDJFESs28FtsscqleagPCEEtIC32q3NlpNVMxiNq8fEcLzp8izvDVbhinIB72Wz/AwYVg/Vo0MQ==
+"@chec/integration-handler@^0.0.12":
+  version "0.0.12"
+  resolved "https://registry.yarnpkg.com/@chec/integration-handler/-/integration-handler-0.0.12.tgz#cb86c6f440acffc75432d4ef86660190cefeba5d"
+  integrity sha512-Xi1LBsLcMkUKqPbrmuXYRGe9VxPenERWjY9dVvE/aNc8ZYNTX3ZUeNupKAPRzJ0tFnaqGx3yr4okGyCrdW7rPA==
   dependencies:
     "@types/chec__commerce.js" "^2.8.0"
     got "^11.8.2"
