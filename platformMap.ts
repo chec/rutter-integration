@@ -5,5 +5,9 @@ export default {
     platform: 'SHOPIFY',
     label: 'Shopify',
   },
+  magento: {
+    platform: 'MAGENTO',
+    label: 'Magento',
+  }
   // TODO add more
 };

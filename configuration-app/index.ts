@@ -5,23 +5,35 @@ import { ConfigurationType } from '../configuration-type';
 import './index.css';
 import platformMap from '../platformMap';
 
+const getConnectionStatus = async (publicToken: string): Promise<{
+  connected: boolean
+  ready: boolean
+  id?: string
+}> => {
+  return (await fetch(`/api/get-connection-id?publicToken=${publicToken}`)).json();
+});
+
 (async () => {
   // Create an SDK and indicate that the configuration is initially unsavable
   const sdk = await createSDK<ConfigurationType>(false);
 
-  // Figure out what "platform" we're supporting with this integration
-  const { platform, label } = platformMap[sdk.template];
-
-  if (sdk.editMode) {
-    // Ensure that we're not preventing save when editing
-    sdk.setSavable(true);
-    // Show some feedback that no further configuration is required.
-    sdk.setSchema([{
-      type: SchemaFieldTypes.Html,
-      content: `<p>This integration is connected to your ${label} account. Changes to products and categories will be automatically synced and visible in the logs below</p>`,
-    }])
+  if (!sdk.editMode) {
+    // This integration only functions in edit mode
     return;
   }
+
+  // Check the configuration for an existing token
+  if (sdk.config.publicToken) {
+    const status = await getConnectionStatus(sdk.config.publicToken);
+
+    if (status.connected) {
+      // Do something here...
+      return;
+    }
+  }
+
+  // Figure out what "platform" we're supporting with this integration
+  const { platform, label } = platformMap[sdk.template];
 
   // Replace spans in HTML content that should have the platform label
   Array.from(document.getElementsByClassName('platform')).forEach((element) => {
@@ -45,7 +57,7 @@ import platformMap from '../platformMap';
     // @ts-ignore
     const rutter = window.Rutter.create({
       publicKey: process.env.RUTTER_PUBLIC_KEY,
-      onSuccess(publicToken) {
+      async onSuccess(publicToken) {
         if (publicToken === undefined) {
           // Should apparently never happen. The type will (apparently) be updated in a future release of rutter-link
           return;
@@ -57,6 +69,8 @@ import platformMap from '../platformMap';
         sdk.setConfig({
           publicToken,
         });
+        sdk.setExternalId(await resolveConnectionID(publicToken));
+
         // We've got what we need to save the integration now
         sdk.setSavable(true);
       },

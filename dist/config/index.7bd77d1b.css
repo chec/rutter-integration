@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap');
-
+@import "https://fonts.googleapis.com/css2?family=Lato:wght@400;700&display=swap";
 body {
   padding: 0;
   margin: 0;
@@ -55,3 +54,5 @@ button:hover {
 button:active {
   background-color: rgba(113, 135, 165, 1);
 }
+
+/*# sourceMappingURL=index.7bd77d1b.css.map */

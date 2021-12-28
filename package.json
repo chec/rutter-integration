@@ -13,12 +13,14 @@
   "devDependencies": {
     "@chec/integration-handler": "^0.0.12",
     "@vercel/ncc": "^0.31.1",
+    "@vercel/node": "^1.12.1",
     "parcel": "^2.0.1",
     "typescript": "^4.4.4"
   },
   "dependencies": {
     "@chec/integration-configuration-sdk": "^0.0.8",
-    "@rutter/rutter-link": "^1.0.31"
+    "@rutter/rutter-link": "^1.0.31",
+    "isomorphic-fetch": "^3.0.0"
   },
   "browserslist": {
     "production": [

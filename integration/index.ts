@@ -1,41 +1,8 @@
 import { Context, IntegrationHandler } from '@chec/integration-handler';
-import { ConfigurationType } from '../configuration-type';
 import { OptionsOfJSONResponseBody } from 'got';
+import { RutterProduct, RutterProductResponse, RutterTokenResponse } from '../rutter-types';
+import { ConfigurationType } from '../configuration-type';
 import platformMap from '../platformMap';
-
-interface RutterProduct {
-  id: string
-  platform_id: string
-  type: string
-  name: string
-  description: string
-  images: Array<RutterImage>
-  status: 'active' | 'archived' | 'inactive' | 'draft'
-  variants: Array<RutterVariant>
-  tags: Array<string>
-  product_url: string
-}
-
-interface RutterVariant {
-  id: string
-  product_id: string
-  barcode: string|null
-  title: string
-  price: number
-  sku: string
-  option_values: Array<{ name: string, value: string }>
-  requires_shipping: boolean
-  inventory?: { total_count: number, locations: null|Array<any> }
-}
-
-interface RutterImage {
-  src: string
-}
-
-interface RutterProductResponse {
-  products: Array<RutterProduct>
-  next_cursor: string|null
-}
 
 const handler: IntegrationHandler<ConfigurationType> = async (request, context) => {
   if (request.body.event !== 'integrations.ready') {
@@ -46,7 +13,42 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
   }
 
   const integration = await context.integration();
+  const baseUrl = 'https://production.rutterapi.com';
+
+  const { access_token: token, connection_id: connectionId, is_ready: isReady } = (
+    await context.got<RutterTokenResponse>(`${baseUrl}/item/public_token/exchange`, {
+      responseType: 'json',
+      json: {
+        client_id: process.env.RUTTER_CLIENT_ID,
+        secret: process.env.RUTTER_SECRET_ID,
+        public_token: integration.config.publicToken
+      },
+      method: 'post',
+    })
+  ).body;
+
+  // Set the store ID as the integration external reference, but don't wait for the response.
   // @ts-ignore
+  integration.setExternalId(connectionId);
+
+  // The connection isn't ready yet. The Chec API has a webhook that will rerun this integration when the store is ready
+  if (!isReady) {
+    return {
+      statusCode: 202,
+      body: 'Product syncing will begin when the external service is ready',
+    };
+  }
+
+  const gotConfig: OptionsOfJSONResponseBody = {
+    responseType: 'json',
+    searchParams: {
+      access_token: token,
+    },
+    username: process.env.RUTTER_CLIENT_ID,
+    password: process.env.RUTTER_SECRET_ID,
+    prefixUrl: baseUrl,
+  };
+
   const platform = integration.template.code;
 
   const promises = [];
@@ -54,8 +56,6 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
     products: [],
     categories: [],
   };
-
-  const gotConfig = await getConfig(context);
 
   // TODO Add category support - Rutter only supports this for Etsy
 
@@ -116,31 +116,6 @@ const handler: IntegrationHandler<ConfigurationType> = async (request, context) 
     }),
   };
 };
-
-
-async function getConfig(context: Context): Promise<OptionsOfJSONResponseBody> {
-  const baseUrl = 'https://production.rutterapi.com';
-  const integration = await context.integration();
-  // Retrieve the access token from Rutter
-  const res: any = await context.got(`${baseUrl}/item/public_token/exchange`, {
-    json: {
-      client_id: process.env.RUTTER_CLIENT_ID,
-      secret: process.env.RUTTER_SECRET_ID,
-      public_token: integration.config.publicToken
-    },
-    method: 'post',
-  }).json();
-
-  return {
-    responseType: 'json',
-    searchParams: {
-      access_token: res.access_token,
-    },
-    username: process.env.RUTTER_CLIENT_ID,
-    password: process.env.RUTTER_SECRET_ID,
-    prefixUrl: baseUrl,
-  };
-}
 
 function convertProduct(product: RutterProduct) {
   const baseProduct = {
